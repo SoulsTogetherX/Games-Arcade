@@ -1,0 +1,60 @@
+body {
+  background-color: #000000;
+}
+
+#nav {
+  background-color: #aaaaff;
+}
+
+.aboveNav {
+  background-color: #aaaaaa;
+}
+
+#game-window {
+  margin-left: 5px;
+  position: relative;
+  outline-style: solid;
+  outline-color: white;
+  display: block;
+  image-rendering: crisp-edges;
+}
+
+.belowNav {
+  
+}
+
+.gameDiv {
+  margin: 30px;
+  margin-bottom: 0px;
+  position: relative;
+}
+
+.gameTitle {
+  background-color: #ffaaaa;
+  border-style: double;
+  border-width: 5px;
+}
+
+.nav-option {
+  background-color: #ffaaaa;
+  display: inline-block;
+  font-size: 18px;
+  padding: 4px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.nav-option-current {
+  background-color: #aaffaa;
+  display: inline-block;
+  font-size: 18px;
+  padding: 4px;
+  padding-left: 10px;
+  padding-right: 30px;
+}
+
+.clearfix::after {
+  content: "";
+  clear: both;
+  display: table;
+}

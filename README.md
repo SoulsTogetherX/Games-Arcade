@@ -1,2 +1,5 @@
 # Games-Arcade
-A practice website I'm using to learn Javascript
+A practice website I'm using to learn Javascript\
+\
+\
+Current Version: 0.01
