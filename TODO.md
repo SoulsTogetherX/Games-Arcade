@@ -1,14 +1,12 @@
 # Games To Add
-	Super Tic Tac Toe\
-	Conway's Game of Life\
+	Checkers\
 	Draw Game\
-	flappyBird\
 	PackMan\
-	Ant Pathing\
+	Frogger\
 \
 # Game Updates
 	Polish everything\
-	Rewine Conway's Game of Life\
+	Rewrite Conway's Game of Life\
 	Mouse Support editing in Conway's Game of Life\
 	Settings in snake\
 	Save and Load support\

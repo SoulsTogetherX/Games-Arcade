@@ -1,4 +1,4 @@
-let nav_options = ["Home", "Snake", "Conway", "FlappyBird", "Ant_Pathing", "Super TTT", "Frogger", "Packman"];
+let nav_options = ["Home", "Snake", "Conway", "FlappyBird", "Ant_Pathing", "Super_TTT", "Frogger", "Packman"];
 
 const navBoard = document.getElementById("nav");
 

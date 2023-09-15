@@ -6,7 +6,7 @@ var up = 32;
 blacklist_key = [up];
 
 const grav = 0.1, max_spd = 2 + grav;
-const pipe_spd = 2;
+const pipe_spd = 1; 
 
 class Entity extends Blank {}
 
@@ -15,25 +15,27 @@ class Bird extends Entity {
 	color = '#FFFFFF';
 	constructor(...args) {
 		super(...args);
-		this.setBodyCollision('box', 'bottom-left', ['Pipes'], (obj, collider) => {
+		this.setBodyCollision('box', 'top-left', ['Pipes'], async (obj, collider) => {
 			if ((obj.y - obj.height < collider.gapTop) ||
 				(collider.height - collider.gapBottom < obj.y))
 			{
-				clearAllAsyncIntervals();
-				setTimeout(() => startGame(), 2000);
+				await clearAllAsyncIntervals();
+				setAsyncInterval(startGame, 2000, true, 0);
 			}
 		});
 	}
 	update() {
 		this.spd -= grav;
-		this.y -= this.spd;
-		if (this.y >= screen_height) {
-			this.y = screen_height;
+		var oY = this.y - this.spd;
+		if (oY > screen_height) {
+			oY = screen_height;
 			this.spd = 0;
-		} else if (this.height >= this.y) {
-			this.y = this.height;
+		} else if (oY < this.height) {
+			oY = this.height;
 			this.spd = 0;
 		}
+
+		moveSprite(this, this.x, oY);
 	};
 	draw() {
 		ctx.beginPath();
@@ -57,7 +59,7 @@ class Pipes extends Entity {
 		this.setBodyCollision('box', 'bottom-left', 'none');
 	}
 	update() {
-		this.x -= pipe_spd;
+		moveSprite(this, this.x - pipe_spd, this.y);
 		if (this.x < -this.width)
 			deleteSprite(this.id);
 	};
@@ -71,7 +73,7 @@ class Pipes extends Entity {
 		}
 		if (this.gapBottom < this.height) {
 			ctx.beginPath();
-			ctx.rect(this.x, this.height - this.gapBottom, this.width, this.gapBottom);
+			ctx.rect(this.x, this.y + this.height - this.gapBottom, this.width, this.gapBottom);
 			ctx.fillStyle = this.color;
 			ctx.fill();
 			ctx.closePath();
@@ -107,22 +109,22 @@ function gameMainLoop() {
 	drawSprites();
 }
 
-function addPipes() {
-	var width = 20;
-	var height = screen_height / ratio;
-	var gapLength = 40;
-	var gapTop = (Math.random() * (height - gapLength - 10)) + 5;
-	var gapBottom = height - gapTop - gapLength;
-	gapTop *= ratio;
+var temp = false;
 
-	addSprite('Pipes', true, true, true, screen_width, 0, width, height, gapTop, gapBottom);
+function addPipes() {
+	var gapLength = 50 * ratio;
+	var gapTop = (Math.random() * (screen_height - (1.1 * gapLength)));
+	var gapBottom = screen_height - gapTop - gapLength;
+
+	addSprite('Pipes', true, true, true, screen_width, 0, 20 * ratio, screen_height, gapBottom, gapTop);
 }
 
 function startGame() {
 	clearSprites();
-	addSprite('Bird', true, true, true, 50, screen_height / 2, 20, 20);
-	setAsyncInterval(gameMainLoop, 20);
+	addSprite('Bird', true, true, true, 50, screen_height / 2, 20 * ratio, 20 * ratio);
+	setAsyncInterval(gameMainLoop, 10);
 	setAsyncInterval(addPipes, 2500);
 }
 
+createChunks(1, 1);
 startGame();

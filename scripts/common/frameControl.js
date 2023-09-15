@@ -1,6 +1,10 @@
+const asyncTimeouts = [];
+const emptyTimeouts = [];
+
 const asyncIntervals = [];
 const emptyIntervals = [];
 const runningIntervals = [];
+
 const heldKeys = {};
 var blacklist_key = [];
 
@@ -21,11 +25,11 @@ window.onkeyup = function(e) {
 		heldKeys[e.keyCode] = 0; 
 }
 
-function setAsyncInterval(foo, wait, hold = false) {
+function setAsyncInterval(foo, ms, hold = false, limit = NaN) {
 	if (foo && typeof foo === "function") {
 		const intervalId = emptyIntervals.length ? emptyIntervals.pop() : asyncIntervals.length;
 
-		asyncIntervals[intervalId] = {running: true, func: foo, id: 0, ms: wait, st: (new Date()).getTime(), remain: 0};
+		asyncIntervals[intervalId] = {running: true, func: foo, id: 0, ms: ms, st: (new Date()).getTime(), remain: 0, limit: limit};
 		if (hold)
 			asyncIntervals[intervalId].id = setTimeout(() => runAsyncInterval(intervalId), ms);
 		else
@@ -39,6 +43,11 @@ function setAsyncInterval(foo, wait, hold = false) {
 async function runAsyncInterval(intervalId) {
 	await asyncIntervals[intervalId].func();
 	if (asyncIntervals[intervalId].running) {
+		if (asyncIntervals[intervalId].limit-- <= 0) {
+			emptyIntervals.push(intervalId);
+			asyncIntervals[intervalId].running = false;
+			return;
+		}
 		asyncIntervals[intervalId].st = (new Date()).getTime();
 		asyncIntervals[intervalId].id = setTimeout(() => runAsyncInterval(intervalId), asyncIntervals[intervalId].ms);
 	}

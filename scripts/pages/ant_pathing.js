@@ -3,11 +3,12 @@ const [ctx, screen_width, screen_height, ratio] = render(gameBoard, 500, 1);
 
 game_spd = 20;
 ant_spd = 2*ratio; 
-maxFoodTime = 150;
-maxAngle = Math.PI / 20;
-scentFrequency = 10;
+maxFoodTime = 400;
+maxWanderTime = 800;
+maxAngle = Math.PI / 30;
+scentFrequency = 20;
 scentDuration = 100000;
-scentDecay = 0.9;
+scentDecay = 0.94;
 
 class Entity extends Blank {
 	color = '#000000';
@@ -24,7 +25,7 @@ class Home extends Entity {
 	color = '#FFFFFF';
 	constructor(...args) {
 		super(...args);
-		this.setBodyCollision('box', 'middle-center', ['none']);
+		this.setBodyCollision('box', 'middle-center', 'none');
 	}
 }
 
@@ -32,7 +33,21 @@ class Food extends Entity {
 	color = '#00FF007F';
 	constructor(...args) {
 		super(...args);
-		this.setBodyCollision('box', 'middle-center', ['none']);
+		this.setBodyCollision('box', 'middle-center', 'none');
+	}
+}
+
+class Clear extends Entity {
+	constructor(...args) {
+		super(...args);
+		this.setBodyCollision('box', 'middle-center', ['Food'], (self, detected) => {
+			deleteSprite(detected.id);
+		});
+		this.wait = 1;
+	}
+	update() {
+		if (this.wait-- <= 0)
+			deleteSprite(this.id);
 	}
 }
 
@@ -49,24 +64,32 @@ class Sensor extends Entity {
 		this.angleOffset = angleOffset;
 		this.owner = owner;
 
-		this.init();
+		this.setBodyCollision('box', 'middle-center', ['Food', 'Food_Scent', 'Home', 'Home_Scent', 'Avoid_Scent'], (self, detected) => {
+			switch(detected.constructor.name) {
+				case 'Home_Scent':
+					self.homeScents += (scentDuration - detected.duration);
+				break;
+				case 'Food_Scent':
+					self.foodScents += (scentDuration - detected.duration);
+				break;
+				case 'Avoid_Scent':
+					self.foodScents -= (scentDuration - detected.duration) / 2;
+				break;
+				case 'Home':
+					self.home = true;
+				break;
+				default:
+					self.food = true;
+				break;
+			}
+		});
 
-		this.setBodyCollision('box', 'middle-center', ['Home_Scent'], (self, scent) => {
-			self.homeScents += scentDuration - scent.duration;
-		});
-		this.addCollision('box', 'middle-center', ['Food_Scent'], (self, scent) => {
-			self.foodScents += scentDuration - scent.duration;
-		});
-		this.setBodyCollision('box', 'middle-center', ['Home'], (self) => {
-			self.home = true;
-		});
-		this.addCollision('box', 'middle-center', ['Food'], (self) => {
-			self.food = true;
-		});
+		this.init();
 	}
 	init() {
-		this.x = this.owner.x + this.distanceOffset * Math.cos(this.owner.direction + this.angleOffset);
-		this.y = this.owner.y + this.distanceOffset * Math.sin(this.owner.direction + this.angleOffset);
+		moveSprite(	this, 
+					this.owner.x + this.distanceOffset * Math.cos(this.owner.direction + this.angleOffset),
+					this.owner.y + this.distanceOffset * Math.sin(this.owner.direction + this.angleOffset));
 		this.home = false;
 		this.food = false;
 		this.homeScents = 1;
@@ -77,28 +100,38 @@ class Sensor extends Entity {
 class Ant extends Entity {
 	color = '#7F7F00';
 	direction = Math.random() * 2 * Math.PI;
-	time = 200; foodTime = 0;
-	hasFood = false;
+	scentTime = 200; wanderTime = maxWanderTime; foodTime = 0;
+	goHome = false; looking = true;
 	constructor(...args) {
 		super(...args);
-		this.setBodyCollision('box', 'middle-center', ['Food'], (self, food) => {
-			if (!self.hasFood) {
-				self.direction += Math.PI;
-				self.hasFood = true;
-				self.color = '#007F7F';
-				self.foodTime = maxFoodTime;
+		this.setBodyCollision('box', 'middle-center', ['Food', 'Food_Scent', 'Home', 'Home_Scent', 'Avoid_Scent'], (self, detected) => {
+			switch(detected.constructor.name) {
+				case 'Food':
+					if (!self.goHome) {
+						self.direction += Math.PI;
+						self.goHome = true;
+						self.looking = false;
+						self.color = '#007F7F';
+						self.foodTime = maxFoodTime;
+						addSprite('Food_Scent', false, true, false, this.x, this.y, 50, 50);
+						this.scentTime = scentFrequency;
+					}
+				break;
+				case 'Home':
+					if (self.goHome || !self.looking) {
+						self.direction += Math.PI;
+						self.goHome = false;
+						self.looking = true;
+						self.color = '#7F7F00';
+						self.wanderTime = maxWanderTime;
+						addSprite('Home_Scent', false, true, false, this.x, this.y, 50, 50);
+						this.scentTime = scentFrequency;
+					}
+				break;
+				default:
+					detected.duration *= scentDecay;
+				break;
 			}
-		});
-		this.addCollision('box', 'middle-center', ['Home'], (self, home) => {
-			if (self.hasFood) {
-				self.direction += Math.PI;
-				self.hasFood = false;
-				self.color = '#7F7F00';
-				self.foodTime = 0;
-			}
-		});
-		this.addCollision('box', 'middle-center', ['Home_Scent', 'Food_Scent'], (self, scent) => {
-			scent.duration *= 0.9;
 		});
 	}
 	update() {
@@ -122,7 +155,7 @@ class Ant extends Entity {
 		};
 
 		switch(
-				this.hasFood ?
+				(this.goHome || !this.looking) ?
 				decision(this.LSensor.homeScents, this.CSensor.homeScents, this.RSensor.homeScents, this.LSensor.home, this.CSensor.home, this.RSensor.home) :
 				decision(this.LSensor.foodScents, this.CSensor.foodScents, this.RSensor.foodScents, this.LSensor.food, this.CSensor.food, this.RSensor.food)
 		) {
@@ -148,38 +181,50 @@ class Ant extends Entity {
 		this.CSensor.init();
 		this.RSensor.init();
 
-		this.x += Math.cos(this.direction) * ant_spd;
-		this.y += Math.sin(this.direction) * ant_spd;
+		var X = this.x + Math.cos(this.direction) * ant_spd,
+			Y = this.y + Math.sin(this.direction) * ant_spd;
 
-		if (this.x >= screen_width) {
-			this.x = screen_width;
+		if (X >= screen_width) {
+			X = screen_width;
 			this.direction = Math.PI - this.direction;
 		}
-		if (this.x < 0) {
-			this.x = 0;
+		if (X < 0) {
+			X = 0;
 			this.direction = Math.PI - this.direction;
 		}
-		if (this.y >= screen_height) {
-			this.y = screen_height;
+		if (Y >= screen_height) {
+			Y = screen_height;
 			this.direction = -this.direction;
 		}
-		if (this.y < 0) {
-			this.y = 0;
+		if (Y < 0) {
+			Y = 0;
 			this.direction = -this.direction;
 		}
-		
-		if (this.time-- <= 0) {
-			if (this.hasFood)
-				addSprite('Food_Scent', false, true, true, this.x, this.y, 20, 20);
+		moveSprite(this, X, Y);
+
+		if (this.scentTime-- <= 0) {
+			if (this.goHome)
+				addSprite('Food_Scent', false, true, false, this.x, this.y, 20, 20);
+			else if (this.looking)
+				addSprite('Home_Scent', false, true, false, this.x, this.y, 20, 20);
 			else
-				addSprite('Home_Scent', false, true, true, this.x, this.y, 20, 20);
-			this.time = scentFrequency;
+				addSprite('Avoid_Scent', false, true, false, this.x, this.y, 20, 20);
+			this.scentTime = scentFrequency;
 		}
-		if (this.hasFood && this.foodTime-- <= 0) {
-			this.direction += Math.PI;
-			this.hasFood = false;
-			this.color = '#7F7F00';
-			this.foodTime = 0;
+
+		if (this.looking) {
+			if (this.goHome) {
+				if (this.foodTime-- <= 0) {
+					this.direction += Math.PI;
+					this.goHome = false;
+					this.looking = false;
+					this.color = '#7F7F00';
+				}
+			} else if (this.wanderTime-- <= 0) {
+				this.direction += Math.PI;
+				this.looking = false;
+				this.color = '#7F7F7F';
+			}
 		}
 	}
 }
@@ -188,22 +233,25 @@ class Scent extends Entity {
 	duration = scentDuration;
 	constructor(...args) {
 		super(...args);
-		this.setBodyCollision('box', 'middle-center', ['Ant']);
+		this.setBodyCollision('box', 'middle-center', 'none');
 	}
 	update() {
-		if (this.duration <= 0.000001) {
+		if (this.duration <= 0.000001)
 			deleteSprite(this.id);
-		}
 		this.duration *= scentDecay;
 	}
 }
 
-class Home_Scent extends Scent {
+class Avoid_Scent extends Scent {
 	color = '#7F000044';
 }
 
 class Food_Scent extends Scent {
 	color = '#007F0044';
+}
+
+class Home_Scent extends Scent {
+	color = '#00007F44';
 }
 
 setBuild({
@@ -214,6 +262,10 @@ setBuild({
 	'Food': (...args) =>
 	{
 		return new Food(...args);
+	},
+	'Clear': (...args) =>
+	{
+		return new Clear(...args);
 	},
 	'Sensor': (...args) =>
 	{
@@ -234,15 +286,25 @@ setBuild({
 	'Food_Scent': (...args) =>
 	{
 		return new Food_Scent(...args);
+	},
+	'Avoid_Scent': (...args) =>
+	{
+		return new Avoid_Scent(...args);
 	}
 });
 
-function gameSetUp() {
-	addSprite('Home', false, false, true, screen_width / 2, screen_height / 2, 55, 55);
-	for(var i=0; i<50; i++)
-		addSprite('Ant', true, true, true, screen_width / 2, screen_height / 2, 10, 10);
-	setAsyncInterval(gameMainLoop, game_spd);
-}
+gameBoard.addEventListener("mousedown", function(e) {
+	const {x, y} = getMousePosition(gameBoard, e);
+	e.preventDefault();
+	switch (e.which) {
+		case 1:
+			addSprite('Food', false, false, true, x, y, 20, 20);
+		break;
+		case 3:
+			addSprite('Clear', true, true, false, x, y, 20, 20);
+		break;
+	}
+});
 
 function gameMainLoop() {
 	updateSprites();
@@ -252,15 +314,12 @@ function gameMainLoop() {
 	drawSprites();
 }
 
-function getMousePosition(canvas, event) {
-	let rect = canvas.getBoundingClientRect();
-	let x = event.clientX - rect.left;
-	let y = event.clientY - rect.top;
-	addSprite('Food', false, false, true, x, y, 20, 20);
+function gameSetUp() {
+	addSprite('Home', false, false, true, screen_width / 2, screen_height / 2, 55, 55);
+	for(var i=0; i<50; i++)
+		addSprite('Ant', true, true, true, screen_width / 2, screen_height / 2, 10, 10);
+	setAsyncInterval(gameMainLoop, game_spd);
 }
 
-gameBoard.addEventListener("mousedown", function(e) {
-	getMousePosition(gameBoard, e);
-});
-
+createChunks(25, 25);
 gameSetUp();

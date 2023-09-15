@@ -2,4 +2,4 @@
 A practice website I'm using to learn Javascript\
 \
 \
-Current Version: 0.01
+Current Version: 0.02

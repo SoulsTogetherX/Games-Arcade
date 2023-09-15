@@ -1,6 +1,7 @@
 class Blank {
-	collisionMaps = [{type: undefined, center: undefined, objs: 'none'}];
-	constructor(id, collisional, updatable, visible, x, y, width, height) {
+	collisionMap = {type: undefined, center: undefined, objs: 'none'};
+	chunksPos = [-1,-1,-1,-1];
+	constructor(id, collisional, updatable, visible, x, y, width, height, ratio = 1) {
 		this.width = width * ratio;
 		this.height = height * ratio;
 		this.id = id;
@@ -13,18 +14,16 @@ class Blank {
 	update() {};
 	draw() {};
 	setBodyCollision(type, center, objs, func) {
-		this.collisionMaps[0] = {type: type, center: center, objs: objs, func: func};
-	}
-	addCollision(type, center, objs, func) {
-		this.collisionMaps.push({type: type, center: center, objs: objs, func: func});
+		this.collisionMap = {type: type, center: center, objs: objs, func: func};
+		addToChunks(this);
 	}
 };
 
 const spriteSheet = [];
 const collisionalSprites = [];
+const chunks = [];
 const updatableSprites = [];
 const visibleSprites = [];
-const spriteClassification = new Map();
 const unused_Indexes = [];
 var spritesBuild = {};
 
@@ -43,54 +42,105 @@ function render(gameBoard, side = 500, aspectRatio = 1) {
 	return [ctx, screen_width, screen_height, ratio];
 }
 
+function createChunks(numH, numV) {
+	const	HChunk	= (screen_width/numH),
+			VChunk	= (screen_height/numV),
+			HInc	= (HChunk / 2),
+			VInc	= (VChunk / 2);
+	numH = HInc*(numH << 1);
+	numV = VInc*(numV << 1);
+
+	for (var posV = -VInc; posV < numV; posV += VInc) {
+		const temp = [];
+		for (var posH = -HInc; posH < numH; posH += HInc)
+			temp.push([posH, posH + HChunk, posV, posV + VChunk, new Map()]);
+		chunks.push(temp)
+	}
+}
+
+function addToChunks(obj) {
+	const [x1, x2, y1, y2] = getCollision(obj);
+	var stH = 0, endH = chunks[0].length - 1, stV = 0, endV = chunks.length - 1;
+
+	var len = chunks[0].length - 1;
+	while(stH < len && chunks[0][stH][1] < x1) stH++;
+	while(endH > 0 && chunks[0][endH][0] > x2) endH--;
+
+	len = chunks.length - 1;
+	while(stV < len && chunks[stV][0][3] < y1) stV++;
+	while(endV > 0 && chunks[endV][0][2] > y2) endV--;
+
+	obj.chunksPos = [stH, endH, stV, endV];
+	for (var idxV = stV; idxV <= endV; idxV++)
+		for (var idxH = stH; idxH <= endH; idxH++) {
+			const objSet = chunks[idxV][idxH][4];
+			if (objSet.has(obj.constructor.name))
+				objSet.get(obj.constructor.name).push(obj.id);
+			else
+				objSet.set(obj.constructor.name, [obj.id]);
+		}
+}
+
 function setBuild(build) {
 	spritesBuild = build;
 }
 
 function addSprite(id, collision, update, visible, ...args) {
 	const spriteId = unused_Indexes.length ? unused_Indexes.pop() : spriteSheet.length;
-	const sprite = spritesBuild[id](spriteId, collision, update, visible, ...args);
+	const obj = spritesBuild[id](spriteId, collision, update, visible, ...args);
 
-	spriteSheet[spriteId] = sprite;
-	if (spriteClassification.has(sprite.constructor.name))
-		spriteClassification.get(sprite.constructor.name).push(sprite);
-	else
-		spriteClassification.set(sprite.constructor.name, [sprite]);
-
+	spriteSheet[spriteId] = obj;
 	if (collision)
-		collisionalSprites.push(sprite);
+		collisionalSprites.push(obj);
 	if (update)
-		updatableSprites.push(sprite);
+		updatableSprites.push(obj);
 	if (visible)
-		visibleSprites.push(sprite);
+		visibleSprites.push(obj);
 
 	return spriteId;
 }
 
+function replaceSprite(id, ...args) {
+	deleteSprite(id);
+	return addSprite(...args);
+}
+
+function getSprite(id) {
+	return spriteSheet[id];
+}
+
 function deleteSprite(id) {
-	const sprite = spriteSheet[id];
-	const array = spriteClassification.get(sprite.constructor.name);
-	for (let idx in array) {
-		if (id === array[idx].id) {
-			array.splice(idx, 1);
-			break;
+	const obj = spriteSheet[id];
+	if (obj.collisional) {
+		const [stH, endH, stV, endV] = obj.chunksPos;
+		for(var idxV = stV; idxV <= endV; idxV++) {
+			for(var idxH = stH; idxH <= endH; idxH++) {
+				const sprites = chunks[idxV][idxH][4].get(obj.constructor.name);
+
+				for (let idx in sprites) {
+					if (id === sprites[idx]) {
+						sprites.splice(idx, 1);
+						break;
+					}
+				}
+			}
 		}
-	}
-	if (sprite.collisional)
+
 		for (let idx in collisionalSprites) {
 			if (id === collisionalSprites[idx].id) {
 				collisionalSprites.splice(idx, 1);
 				break;
 			}
 		}
-	if (sprite.updatable)
+	}
+	if (obj.updatable)
 		for (let idx in updatableSprites) {
 			if (id === updatableSprites[idx].id) {
 				updatableSprites.splice(idx, 1);
 				break;
 			}
 		}
-	if (sprite.visible) {
+	if (obj.visible) {
 		for (let idx in visibleSprites) {
 			if (id === visibleSprites[idx].id) {
 				visibleSprites.splice(idx, 1);
@@ -118,12 +168,14 @@ function clearSprites() {
 	collisionalSprites.length = 0;
 	updatableSprites.length = 0;
 	visibleSprites.length = 0;
-	spriteClassification.clear();
+	for(chunkRow of chunks)
+		for(chunk of chunkRow)
+			chunk[4].clear();
 }
 
-function getCollision(obj, map) {
+function getCollision(obj) {
 	var x1 = obj.x, x2 = obj.x, y1 = obj.y, y2 = obj.y;
-	switch(map.center) {
+	switch(obj.collisionMap.center) {
 		case 'bottom-left':
 			x2 += obj.width;
 			y2 += obj.height;
@@ -170,9 +222,113 @@ function getCollision(obj, map) {
 	return [x1, x2, y1, y2];
 }
 
-function checkCollision(obj, collider, map) {
-	const [x1,  x2,  y1,  y2] = getCollision(obj, map);
-	const [x1_, x2_, y1_, y2_] = getCollision(collider, collider.collisionMaps[0]);
+function moveSprite(obj, newX, newY) {
+		// Needed variables
+	const [oX, oY] = [obj.x, obj.y];
+	obj.x = newX; obj.y = newY;
+
+	if (!obj.collisional)
+		return;
+
+	const [x1, x2, y1, y2] = getCollision(obj, obj.collisionMap);
+	var [newStH, newEndH, newStV, newEndV] = obj.chunksPos;
+	changed = false;
+
+		// New chunk bounds
+			// Horizontal
+	if (newX > oX) {
+		const len = chunks[0].length - 1, row = chunks[0];
+		if (newStH < len) {
+			changed = true;
+			while(true)
+				if (row[newStH][1] >= x1 || (++newStH >= len))
+					break;
+		}
+		if (newEndH < len) {
+			changed = true;
+			while(true)
+				if (row[newEndH][1] >= x2 || (++newEndH >= len))
+					break;
+		}
+	} else if (newX < oX) {
+		const row = chunks[0];
+		if (newStH > 0) {
+			changed = true;
+			while(true)
+				if ((row[newStH][0] <= x1) || (--newStH <= 0))
+					break;
+		}
+		if (newEndH > 0) {
+			changed = true;
+			while(true)
+				if ((row[newEndH][0] <= x2) || (--newEndH <= 0))
+					break;
+		}
+	}
+			// Vertical
+	if (newY > oY) {
+		const len = chunks.length - 1;
+		if (newStV < len) {
+			changed = true;
+			while(true) {
+				if (chunks[newStV][0][3] >= y1 || (++newStV >= len))
+					break;
+			}
+		}
+		if (newEndV < len) {
+			changed = true;
+			while(true)
+				if (chunks[newEndV][0][3] >= y2 || (++newEndV >= len))
+					break;
+		}
+	} else if (newY < oY) {
+		if (newStV > 0) {
+			changed = true;
+			while(true)
+				if ((chunks[newStV][0][2] <= y1) || (--newStV <= 0))
+					break;
+		}
+		if (newEndV > 0) {
+			changed = true;
+			while(true)
+				if ((chunks[newEndV][0][2] <= y2) || (--newEndV <= 0))
+					break;
+		}
+	}
+
+		// Updates relevant chunks
+	if (changed) {
+			// Removing
+		const [stH, endH, stV, endV] = obj.chunksPos;
+		for(var idxV = stV; idxV <= endV; idxV++) {
+			for(var idxH = stH; idxH <= endH; idxH++) {
+				const sprites = chunks[idxV][idxH][4].get(obj.constructor.name);
+				for (let idx in sprites) {
+					if (obj.id === sprites[idx]) {
+						sprites.splice(idx, 1);
+						break;
+					}
+				}
+			}
+		}
+			// Adding
+		for(var idxV = newStV; idxV <= newEndV; idxV++) {
+			for(var idxH = newStH; idxH <= newEndH; idxH++) {
+				const sprites = chunks[idxV][idxH][4];
+				if (sprites.has(obj.constructor.name))
+					sprites.get(obj.constructor.name).push(obj.id);
+				else
+					sprites.set(obj.constructor.name, [obj.id]);
+			}
+		}
+			// Updates chunk index for object
+		obj.chunksPos = [newStH, newEndH, newStV, newEndV];
+	}
+}
+
+function checkCollision(obj, collider) {
+	const [x1,  x2,  y1,  y2] = getCollision(obj, obj.collisionMap);
+	const [x1_, x2_, y1_, y2_] = getCollision(collider, collider.collisionMap);
 
 	if ((x1 <= x2_) && (x1_ <= x2) && (y1 <= y2_) && (y1_ <= y2)) {
 		return true;
@@ -182,24 +338,40 @@ function checkCollision(obj, collider, map) {
 
 function spriteCollisions() {
 	for (let self of collisionalSprites) {
-		for (let map of self.collisionMaps) {
-			if (map.objs === 'all') {
-				for (let id2 in spriteSheet) {
-					if (id !== id2 && 'Blank' !== spriteSheet[id2].constructor.name && checkCollision(self, spriteSheet[id2], map)) {
-						map.func(self, spriteSheet[id2]);
-					}
-				}
-			} else if (map.objs !== 'none') {
-				for (let name of map.objs) {
-					if (spriteClassification.has(name)) {
-						for (let collider of spriteClassification.get(name)) {
-							if (self.id !== collider.id && checkCollision(self, collider, map)) {
-								map.func(self, collider);
-							}
-						}
+		const [stH, endH, stV, endV] = self.chunksPos;
+		const map = self.collisionMap;
+
+		if (map.objs === 'all') {
+			const spriteIdxs = new Set();
+			for(var idxV = stV; idxV <= endV; idxV++)
+				for(var idxH = stH; idxH <= endH; idxH++)
+					(chunks[idxV][idxH][4].keys()).forEach(id => spriteIdxs.add(id))
+
+			for (let id of spriteIdxs)
+				if (self.id !== id && checkCollision(self, spriteSheet[id]))
+					map.func(self, spriteSheet[id]);
+		} else if (map.objs !== 'none') {
+			const spriteIdxs = new Set();
+			for(var idxV = stV; idxV <= endV; idxV++) {
+				for(var idxH = stH; idxH <= endH; idxH++) {
+					for(const name of map.objs) {
+						const sprites = chunks[idxV][idxH][4].get(name);
+						if (sprites !== undefined)
+							sprites.forEach(id => spriteIdxs.add(id))
 					}
 				}
 			}
+
+			for (let id of spriteIdxs)
+				if (self.id !== id && checkCollision(self, spriteSheet[id]))
+					map.func(self, spriteSheet[id]);
 		}
 	}
+}
+
+function getMousePosition(canvas, e) {
+	let rect = canvas.getBoundingClientRect();
+	let x = e.clientX - rect.left;
+	let y = e.clientY - rect.top;
+	return {x, y};
 }
